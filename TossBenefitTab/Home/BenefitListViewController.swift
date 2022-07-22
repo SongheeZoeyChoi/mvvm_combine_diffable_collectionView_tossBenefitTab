@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Combine
 
 class BenefitListViewController: UIViewController {
     
@@ -28,13 +29,28 @@ class BenefitListViewController: UIViewController {
     }
     var datasource: UICollectionViewDiffableDataSource<Section, Item>! // 프로토콜 타입이 아닌 구현체 타입을 넣어준다
     
-    var todaySectionItems: [AnyHashable] = TodaySectionItem(point: .default, today: .today).setionItems // [MyPoint.default, Benefit.today] // 두개를 하나로 표현
-    var otherSectionItems: [AnyHashable] = Benefit.others
+    // 이건 처음부터 데이터 있을 때 나타내는거고 //
+//    var todaySectionItems: [AnyHashable] = TodaySectionItem(point: .default, today: .today).setionItems // [MyPoint.default, Benefit.today] // 두개를 하나로 표현
+//    var otherSectionItems: [AnyHashable] = Benefit.others
+    
+    // --> 처음부터 데이터가 없다고 했을 때(네트워크로 데이터 가져올 때) //
+    @Published var todaySectionItems: [AnyHashable] = []
+    @Published var otherSectionItems: [AnyHashable] = []
+    
+    var subscription = Set<AnyCancellable>()
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navigationItem.title = "혜택"
         
+        setupUI()
+        configureCollectionView()
+        bind()
+    }
+    
+    private func setupUI() {
+        navigationItem.title = "혜택"
+    }
+    private func configureCollectionView() {
         // TODO: CollectionVIew //
         // - data, presentation, layout
         
@@ -59,6 +75,39 @@ class BenefitListViewController: UIViewController {
         collectionView.delegate = self
     }
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        // 네트워크로 비동기 데이터를 받는 경우를 가정했을 때
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.todaySectionItems = TodaySectionItem(point: .default, today: .today).setionItems
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            self.otherSectionItems = Benefit.others
+        }
+    }
+    
+    
+    private func bind() {
+        $todaySectionItems
+            .receive(on: RunLoop.main)
+            .sink { items in
+                self.applySnapshot(items: items, section: .today)
+            }.store(in: &subscription)
+        
+        $otherSectionItems
+            .receive(on: RunLoop.main)
+            .sink { items in
+                self.applySnapshot(items: items, section: .other)
+            }.store(in: &subscription)
+    }
+    
+    private func applySnapshot(items: [Item], section: Section) {
+        var snapshot = datasource.snapshot()
+        snapshot.appendItems(items, toSection: section)
+        datasource.apply(snapshot)
+    }
     
     private func configureCell(for section: Section, item: Item, collectionView: UICollectionView, indexPath: IndexPath) -> UICollectionViewCell? {
         
