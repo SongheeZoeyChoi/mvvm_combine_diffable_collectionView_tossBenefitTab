@@ -34,8 +34,10 @@ class BenefitListViewController: UIViewController {
 //    var otherSectionItems: [AnyHashable] = Benefit.others
     
     // --> 처음부터 데이터가 없다고 했을 때(네트워크로 데이터 가져올 때) //
-    @Published var todaySectionItems: [AnyHashable] = []
-    @Published var otherSectionItems: [AnyHashable] = []
+//    @Published var todaySectionItems: [AnyHashable] = []
+//    @Published var otherSectionItems: [AnyHashable] = []
+    // --> ViewModel
+    let viewModel = BenefitListViewModel()
     
     var subscription = Set<AnyCancellable>()
 
@@ -45,6 +47,7 @@ class BenefitListViewController: UIViewController {
         setupUI()
         configureCollectionView()
         bind()
+        viewModel.fetchItems()
     }
     
     private func setupUI() {
@@ -66,8 +69,8 @@ class BenefitListViewController: UIViewController {
         // data
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.today, .other])
-        snapshot.appendItems(todaySectionItems, toSection: .today)
-        snapshot.appendItems(otherSectionItems, toSection: .other)
+        snapshot.appendItems([], toSection: .today)
+        snapshot.appendItems([], toSection: .other)
         datasource.apply(snapshot)
         
         // layout
@@ -75,31 +78,37 @@ class BenefitListViewController: UIViewController {
         collectionView.delegate = self
     }
     
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        
-        // 네트워크로 비동기 데이터를 받는 경우를 가정했을 때
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.todaySectionItems = TodaySectionItem(point: .default, today: .today).setionItems
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            self.otherSectionItems = Benefit.others
-        }
-    }
-    
-    
     private func bind() {
-        $todaySectionItems
+        // output: data
+        viewModel.$todaySectionItems
             .receive(on: RunLoop.main)
             .sink { items in
                 self.applySnapshot(items: items, section: .today)
             }.store(in: &subscription)
         
-        $otherSectionItems
+        viewModel.$otherSectionItems
             .receive(on: RunLoop.main)
             .sink { items in
                 self.applySnapshot(items: items, section: .other)
+            }.store(in: &subscription)
+        
+        // input: user action
+        viewModel.benefitDidTapped
+            .receive(on: RunLoop.main)
+            .sink { benefit in
+                let sb = UIStoryboard(name: "ButtonBenefit", bundle: nil)
+                let vc = sb.instantiateViewController(withIdentifier: "ButtonBenefitViewController") as! ButtonBenefitViewController
+                vc.benefit = benefit
+                self.navigationController?.pushViewController(vc, animated: true)
+            }.store(in: &subscription)
+        
+        viewModel.pointDidTapped
+            .receive(on: RunLoop.main)
+            .sink { point in
+                let sb = UIStoryboard(name: "MyPoint", bundle: nil)
+                let vc = sb.instantiateViewController(withIdentifier: "MyPointViewController") as! MyPointViewController
+                vc.point = point
+                self.navigationController?.pushViewController(vc, animated: true)
             }.store(in: &subscription)
     }
     
@@ -162,15 +171,9 @@ extension BenefitListViewController: UICollectionViewDelegate {
         print("---> \(item)")
         
         if let benefit = item as? Benefit {
-            let sb = UIStoryboard(name: "ButtonBenefit", bundle: nil)
-            let vc = sb.instantiateViewController(withIdentifier: "ButtonBenefitViewController") as! ButtonBenefitViewController
-            vc.benefit = benefit
-            navigationController?.pushViewController(vc, animated: true)
+            viewModel.benefitDidTapped.send(benefit)
         } else if let point = item as? MyPoint {
-            let sb = UIStoryboard(name: "MyPoint", bundle: nil)
-            let vc = sb.instantiateViewController(withIdentifier: "MyPointViewController") as! MyPointViewController
-            vc.point = point
-            navigationController?.pushViewController(vc, animated: true)
+            viewModel.pointDidTapped.send(point)
         } else {
             //no - op
         }
